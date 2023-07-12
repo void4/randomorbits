@@ -14,10 +14,10 @@ sim = SolarSystemSimulator()
 #sim.add_object('90004479', 5e13, 'black','Comet Neowise')
 #sim.add_object('SpaceX Roadster',1300, 'pink','Starman')
 #sim.add_object('90000033',1e14, 'gray','Comet Halley')
-sim.add_object("-48", 11110, "black", "Hubble", 100, MAXSPEEDDIFF)
+sim.add_object("-48", 11110, "black", "Hubble", n_objects=100, random_acceleration=MAXSPEEDDIFF)
 
 STEP = 0.001#days
-YEARS = 0.1
+YEARS = 1
 print(f"DURATION: {YEARS} years\tSTEP: {STEP*60*60*24} seconds")
 
 r_save = sim.simulate_solar_system(YEARS, STEP)
