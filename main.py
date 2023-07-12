@@ -31,8 +31,11 @@ ax.set_xlim3d(-50e11,50e11)
 ax.set_ylim3d(-50e11,50e11)
 ax.set_zlim3d(-50e11,50e11)
 #Input sim. data
+
+PLOT_INTERVAL = 10
+
 for i in range(len(r_save)): #Plots the outer planets
-    ax.plot3D(r_save[i,0,:],r_save[i,1,:],r_save[i,2,:], sim.plot_colors[i],label=sim.plot_labels[i])
+    ax.plot3D(r_save[i,0,::PLOT_INTERVAL],r_save[i,1,::PLOT_INTERVAL],r_save[i,2,::PLOT_INTERVAL], sim.plot_colors[i],label=sim.plot_labels[i])
 
 ax.legend(sim.plot_labels[:sim.numnatural], loc = 'upper right', prop={'size': 6.5})
 

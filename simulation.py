@@ -98,49 +98,6 @@ class SolarSystemSimulator:
         a = np.vstack((pa, sa))
         return a
 
-
-    def omega(self, N, t_max, dt):
-        """
-        Dummy acceleration function to give an estimate of the total memory
-        consumption for a simulation with N bodies, total simulation time
-        t_max and timestep dt
-        -------------------------------------------------
-        N is the amount of bodies in the simulation
-        t_max is the total simulation time in years
-        dt is the timestep for each integration in days
-        -------------------------------------------------
-        """
-        epsilon = 1
-        G = 1
-        r = np.ones((N, 3))
-        v = np.ones((N, 3))
-        """although the velocities aren't actually taken into account for computing the 
-        acceleration, they will be stored as Nx3 matrices for exactly as many iterations 
-        in the integration loop itself and take up memory accordingly"""
-        m = np.ones((N, 1))
-        # positions r = [x,y,z] for all bodies in the N-Body System
-        x = r[:, 0:1]
-        y = r[:, 1:2]
-        z = r[:, 2:3]
-
-        # matrices that store each pairwise body separation for each [x,y,z] direction: r_j - r_i
-        dx = x.T - x
-        dy = y.T - y
-        dz = z.T - z
-        # matrix 1/r^3 for the absolute value of all pairwise body separations together and
-        # resulting acceleration components in each [x,y,z] direction
-        inv_r3 = (dx ** 2 + dy ** 2 + dz ** 2 + epsilon ** 2) ** (-1.5)
-        ax = G * (dx * inv_r3) @ m
-        ay = G * (dy * inv_r3) @ m
-        az = G * (dz * inv_r3) @ m
-        # pack together the three acceleration components
-        a = np.hstack((ax, ay, az))
-        # sum the memory usage of each matrix storing the positions, distances and accelerations
-        memory_usage_per_iteration = r.nbytes + v.nbytes + x.nbytes + y.nbytes + z.nbytes + dx.nbytes + dy.nbytes + dz.nbytes + ax.nbytes + ay.nbytes + az.nbytes + inv_r3.nbytes + a.nbytes
-        total_memory_usage = memory_usage_per_iteration * (t_max) / (dt * 1e6)
-        return total_memory_usage  # in megabytes
-
-
     def add_object(self, Id_obj, m_obj, plot_color, plot_label, n_objects=1, random_acceleration=None):
         ori = Horizons(id=Id_obj, location="@sun", epochs=Time(self.t_0).jd, id_type='id').vectors()
         print(ori)
@@ -182,8 +139,7 @@ class SolarSystemSimulator:
         epsilon_s = 0.01 #softening default value
 
         a_i = self.a_t(r_i, m_i, epsilon_s)
-        #returns the estimated ram usage for the simulation
-        ram_usage_estimate = self.omega(len(r_i), t_max, dt)
+
         # Simulation Main Loop using a Leapfrog Kick-Drift-Kick Algorithm
         k = int(t_max/dt)
         r_save = np.zeros((r_i.shape[0],3,k+1))
@@ -212,5 +168,5 @@ class SolarSystemSimulator:
             #update list
             r_save[:,:,i+1] = r_i
         sim_time = time.time()-t0_sim_start
-        print('The required computation time for the N-Body Simulation was', round(sim_time,3), 'seconds. The estimated memory usage was', round(ram_usage_estimate,3), 'megabytes of RAM.')
+        print('The required computation time for the N-Body Simulation was', round(sim_time,3), 'seconds.')
         return r_save
