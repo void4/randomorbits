@@ -10,6 +10,8 @@ import scipy.constants as cs
 from astropy.time import Time
 from astroquery.jplhorizons import Horizons
 
+from numba import *
+
 from utils import *
 
 #Example for the estimated memory usage from a simulation with N = 13 bodies, t_max = 250 years and dt = 1 day
@@ -21,6 +23,62 @@ AU = 149597870700
 D = 24*60*60
 
 earth_radius = 6371*1000#m
+
+# Vectorial acceleration function
+@jit
+def a_t(r=np.array([[]]), m=np.array([]), epsilon=0.0, numnatural=0):
+    """
+    Function of matrices returning the gravitational acceleration
+    between N-bodies within a system with positions r and masses m
+    -------------------------------------------------
+    r  is a N x 3 matrix of object positions
+    m is a N x 1 vector of object masses
+    epsilon is the softening factor to prevent numerical errors
+    a is a N x 3 matrix of accelerations
+    -------------------------------------------------
+    """
+    G = cs.gravitational_constant
+    # positions r = [x,y,z] for all planets in the N-Body System
+    px = r[:numnatural, 0:1]
+    py = r[:numnatural, 1:2]
+    pz = r[:numnatural, 2:3]
+
+    # matrices that store each pairwise body separation for each [x,y,z] direction: r_j - r_i
+    pdx = np.subtract(px.T, px)
+    pdy = py.T - py
+    pdz = pz.T - pz
+    # matrix 1/r^3 for the absolute value of all pairwise body separations together and
+    inv_pr3 = (pdx ** 2 + pdy ** 2 + pdz ** 2 + epsilon ** 2) ** (-1.5)
+    # resulting acceleration components in each [x,y,z] direction
+    pax = G * (pdx * inv_pr3) @ m[:numnatural]
+    pay = G * (pdy * inv_pr3) @ m[:numnatural]
+    paz = G * (pdz * inv_pr3) @ m[:numnatural]
+    # pack together the three acceleration components
+    pa = np.hstack((pax, pay, paz))
+
+    # positions r = [x,y,z] for all satellites in the N-Body System
+    sx = r[numnatural:, 0:1]
+    sy = r[numnatural:, 1:2]
+    sz = r[numnatural:, 2:3]
+
+    # between planets and satellites
+    sdx = px.T - sx
+    sdy = py.T - sy
+    sdz = pz.T - sz
+
+    # matrix 1/r^3 for the absolute value of all pairwise body separations together and
+    inv_sr3 = (sdx ** 2 + sdy ** 2 + sdz ** 2 + epsilon ** 2) ** (-1.5)
+    # resulting acceleration components in each [x,y,z] direction
+    # XXX i don't understand mass list here
+    sax = G * (sdx * inv_sr3) @ m[:numnatural]
+    say = G * (sdy * inv_sr3) @ m[:numnatural]
+    saz = G * (sdz * inv_sr3) @ m[:numnatural]
+
+    sa = np.hstack((sax, say, saz))
+
+    a = np.vstack((pa, sa))
+    return a
+
 
 class SolarSystemSimulator:
 
@@ -43,60 +101,6 @@ class SolarSystemSimulator:
             self.r_list.append(r_obj)
             self.v_list.append(v_obj)
             print(self.plot_labels[i], np.linalg.norm(v_obj)*AU/D, "m/s")#np.linalg.norm(v_obj),
-
-    # Vectorial acceleration function
-    def a_t(self, r, m, epsilon):
-        """
-        Function of matrices returning the gravitational acceleration
-        between N-bodies within a system with positions r and masses m
-        -------------------------------------------------
-        r  is a N x 3 matrix of object positions
-        m is a N x 1 vector of object masses
-        epsilon is the softening factor to prevent numerical errors
-        a is a N x 3 matrix of accelerations
-        -------------------------------------------------
-        """
-        G = cs.gravitational_constant
-        # positions r = [x,y,z] for all planets in the N-Body System
-        px = r[:self.numnatural, 0:1]
-        py = r[:self.numnatural, 1:2]
-        pz = r[:self.numnatural, 2:3]
-
-        # matrices that store each pairwise body separation for each [x,y,z] direction: r_j - r_i
-        pdx = px.T - px
-        pdy = py.T - py
-        pdz = pz.T - pz
-        # matrix 1/r^3 for the absolute value of all pairwise body separations together and
-        inv_pr3 = (pdx ** 2 + pdy ** 2 + pdz ** 2 + epsilon ** 2) ** (-1.5)
-        # resulting acceleration components in each [x,y,z] direction
-        pax = G * (pdx * inv_pr3) @ m[:self.numnatural]
-        pay = G * (pdy * inv_pr3) @ m[:self.numnatural]
-        paz = G * (pdz * inv_pr3) @ m[:self.numnatural]
-        # pack together the three acceleration components
-        pa = np.hstack((pax, pay, paz))
-
-        # positions r = [x,y,z] for all satellites in the N-Body System
-        sx = r[self.numnatural:, 0:1]
-        sy = r[self.numnatural:, 1:2]
-        sz = r[self.numnatural:, 2:3]
-
-        # between planets and satellites
-        sdx = px.T - sx
-        sdy = py.T - sy
-        sdz = pz.T - sz
-
-        # matrix 1/r^3 for the absolute value of all pairwise body separations together and
-        inv_sr3 = (sdx ** 2 + sdy ** 2 + sdz ** 2 + epsilon ** 2) ** (-1.5)
-        # resulting acceleration components in each [x,y,z] direction
-        # XXX i don't understand mass list here
-        sax = G * (sdx * inv_sr3) @ m[:self.numnatural]
-        say = G * (sdy * inv_sr3) @ m[:self.numnatural]
-        saz = G * (sdz * inv_sr3) @ m[:self.numnatural]
-
-        sa = np.hstack((sax, say, saz))
-
-        a = np.vstack((pa, sa))
-        return a
 
     def add_object(self, Id_obj, m_obj, plot_color, plot_label, n_objects=1, random_acceleration=None):
         ori = Horizons(id=Id_obj, location="@sun", epochs=Time(self.t_0).jd, id_type='id').vectors()
@@ -138,7 +142,11 @@ class SolarSystemSimulator:
         dt = 60*60*24*dN #dN day time step
         epsilon_s = 0.01 #softening default value
 
-        a_i = self.a_t(r_i, m_i, epsilon_s)
+        #blocks_per_grid = 64
+        #threads_per_block = 64
+        #[blocks_per_grid, threads_per_block]
+
+        a_i = a_t(r_i, m_i, epsilon_s, self.numnatural)
 
         # Simulation Main Loop using a Leapfrog Kick-Drift-Kick Algorithm
         k = int(t_max/dt)
@@ -162,7 +170,8 @@ class SolarSystemSimulator:
             # drift
             r_i += v_i * dt
             # update accelerations
-            a_i = self.a_t(r_i, m_i, epsilon_s)
+            #[blocks_per_grid, threads_per_block]
+            a_i = a_t(r_i, m_i, epsilon_s, self.numnatural)
             # (2/2) kick
             v_i += a_i * dt/2.0
             # update time

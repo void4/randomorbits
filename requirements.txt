@@ -3,4 +3,4 @@ scipy
 astropy
 astroquery
 matplotlib
-mpl_toolkits
+numba
