@@ -17,10 +17,10 @@ sim = SolarSystemSimulator()
 sim.add_object("-48", 11110, "black", "Hubble", n_objects=100, random_acceleration=MAXSPEEDDIFF)
 
 STEP = 0.001#days
-YEARS = 1
+YEARS = 0.1
 print(f"DURATION: {YEARS} years\tSTEP: {STEP*60*60*24} seconds")
 
-r_save = sim.simulate_solar_system(YEARS, STEP)
+r_save = sim.simulate_solar_system(YEARS, STEP, saveevery=10)
 
 #Plot for the outer planets
 

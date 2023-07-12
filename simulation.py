@@ -126,7 +126,7 @@ class SolarSystemSimulator:
             self.plot_colors.append(plot_color)
             self.plot_labels.append(plot_label + str(i))
 
-    def simulate_solar_system(self, N, dN):
+    def simulate_solar_system(self, N, dN, saveevery=1):
         # Convert object staring value lists to numpy
         r_i = np.array(self.r_list) * AU
         v_i = np.array(self.v_list) * AU / D
@@ -142,9 +142,11 @@ class SolarSystemSimulator:
 
         # Simulation Main Loop using a Leapfrog Kick-Drift-Kick Algorithm
         k = int(t_max/dt)
-        r_save = np.zeros((r_i.shape[0],3,k+1))
+
+        r_save = np.zeros((r_i.shape[0],3,k//saveevery+1))
         r_save[:,:,0] = r_i
         crashed = set()
+
         for i in range(k):
             if i % 1000 == 0:
                 print(f"{i}/{k}")
@@ -166,7 +168,11 @@ class SolarSystemSimulator:
             # update time
             t += dt
             #update list
-            r_save[:,:,i+1] = r_i
+            if i%saveevery == 0:
+                index = i//saveevery+1
+                if index >= k//saveevery+1:
+                    break
+                r_save[:,:,index] = r_i
         sim_time = time.time()-t0_sim_start
         print('The required computation time for the N-Body Simulation was', round(sim_time,3), 'seconds.')
         return r_save
