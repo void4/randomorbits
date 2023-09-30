@@ -3,6 +3,7 @@
 import time
 from random import random
 from copy import deepcopy
+import math
 
 import numpy as np
 import scipy.constants as cs
@@ -22,7 +23,29 @@ day = 24*60*60
 AU = 149597870700
 D = 24*60*60
 
-earth_radius = 6371*1000#m
+sun_radius = 696_340
+mercury_radius = 2_439.7
+venus_radius = 6_051.8
+earth_radius = 6_371
+moon_radius = 1_737.4
+mars_radius = 3_389.5
+jupiter_radius = 69_911
+saturn_radius = 58_232
+uranus_radius = 25_362
+neptune_radius = 24_622
+pluto_radius = 1_188.3
+
+
+
+def cart2sph(x,y,z):
+    XsqPlusYsq = x**2 + y**2
+    r = math.sqrt(XsqPlusYsq + z**2)               # r
+    elev = math.atan2(z,math.sqrt(XsqPlusYsq))     # theta
+    az = math.atan2(y,x)                           # phi
+    return r, elev, az
+
+def cart2sphA(pts):
+    return np.array([cart2sph(x,y,z) for x,y,z in pts])
 
 # Vectorial acceleration function
 @jit
@@ -79,6 +102,7 @@ def a_t(r=np.array([[]]), m=np.array([]), epsilon=0.0, numnatural=0):
     a = np.vstack((pa, sa))
     return a
 
+COLLISIONCHECKEVERY = 10
 
 class SolarSystemSimulator:
 
@@ -94,6 +118,8 @@ class SolarSystemSimulator:
 
         self.plot_colors = ['green','brown','orange','blue','gray','red','red','orange','cyan','blue','brown']
         self.plot_labels = ['Barycenter Drift','Mercury Orbit','Venus Orbit','Earth Orbit','Moon Orbit','Mars Orbit','Jupiter Orbit','Saturn Orbit','Uranus Orbit','Neptune Orbit','Pluto Orbit']
+        self.planet_radii = [sun_radius, mercury_radius, venus_radius, earth_radius, moon_radius, mars_radius, jupiter_radius, saturn_radius, uranus_radius, neptune_radius, pluto_radius]
+        self.planet_radii = [pr*1000 for pr in self.planet_radii]
         for i, jpl_id in enumerate(jpl_ids):
             obj = Horizons(id=jpl_id, location="@sun", epochs=Time(self.t_0).jd, id_type='id').vectors()
             r_obj = [obj['x'][0], obj['y'][0], obj['z'][0]]
@@ -105,6 +131,7 @@ class SolarSystemSimulator:
     def add_object(self, Id_obj, m_obj, plot_color, plot_label, n_objects=1, random_acceleration=None):
         ori = Horizons(id=Id_obj, location="@sun", epochs=Time(self.t_0).jd, id_type='id').vectors()
         print(ori)
+        self.random_vectors = []
         for i in range(n_objects):
             obj = deepcopy(ori)
             r_obj = [obj['x'][0], obj['y'][0], obj['z'][0]]
@@ -113,22 +140,26 @@ class SolarSystemSimulator:
             # print(v_obj)
             speed_before = np.linalg.norm(v_obj) * AU / D
             random_vector = sample_spherical()
+
             deltas = []
 
             if random_acceleration is not None:
                 for j in range(3):
-                    delta = random_acceleration * random_vector[j] * np.random.uniform(0.5, 1)
+                    delta = random_acceleration * random_vector[j]# * np.random.uniform(0.5, 1)
                     deltas.append(delta)
                     v_obj[j] += delta
 
+            self.random_vectors.append(deltas)
+
             speed_after = np.linalg.norm(v_obj) * AU / D
-            print(
-                f"Added: {plot_label + str(i)}\tSpeed: {speed_after:.2f} m/s\tDelta: {speed_after - speed_before:.2f} m/s\tApplied delta: {np.linalg.norm(deltas) * AU / D}")
+            #print(f"Added: {plot_label + str(i)}\tSpeed: {speed_after:.2f} m/s\tDelta: {speed_after - speed_before:.2f} m/s\tApplied delta: {np.linalg.norm(deltas) * AU / D}")
             self.r_list.append(r_obj)
             self.v_list.append(v_obj)
             self.m_list.append([m_obj])
             self.plot_colors.append(plot_color)
             self.plot_labels.append(plot_label + str(i))
+
+        self.angles = cart2sphA(np.array(self.random_vectors))
 
     def simulate_solar_system(self, N, dN, saveevery=1):
         # Convert object staring value lists to numpy
@@ -153,18 +184,27 @@ class SolarSystemSimulator:
 
         r_save = np.zeros((r_i.shape[0],3,k//saveevery+1))
         r_save[:,:,0] = r_i
-        crashed = set()
+        self.crashed = {}
+        self.crashindex = {}
 
         for i in range(k):
             if i % 1000 == 0:
                 print(f"{i}/{k}")
-                earth_position = r_i[3]
-                for idx, sat_position in enumerate(r_i[self.numnatural:]):
-                    dist = np.linalg.norm(earth_position-sat_position)
-                    #print(idx, dist)#"earth:", earth_position, "sat:", sat_position,
-                    if dist < earth_radius:
-                        #print("crashed:", idx)
-                        crashed.add(idx)
+
+            if i % COLLISIONCHECKEVERY == 0:
+                # TODO if not checking often enough, probes could coast through atmosphere for a while
+                for planet_index in range(self.numnatural):
+                    planet_position = r_i[planet_index]
+                    for idx, sat_position in enumerate(r_i[self.numnatural:]):
+                        if idx in self.crashed:
+                            continue
+                        dist = np.linalg.norm(planet_position-sat_position)
+                        #print(idx, dist)#"earth:", earth_position, "sat:", sat_position,
+                        if dist < self.planet_radii[planet_index]:
+                            #print("crashed:", idx)
+                            # TODO check other planets
+                            self.crashed[idx] = planet_index
+                            self.crashindex[idx] = i
             # (1/2) kick
             v_i += a_i * dt/2.0
             # drift
